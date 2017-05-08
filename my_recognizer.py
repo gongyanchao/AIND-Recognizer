@@ -22,4 +22,27 @@ def recognize(models: dict, test_set: SinglesData):
     guesses = []
     # TODO implement the recognizer
     # return probabilities, guesses
-    raise NotImplementedError
+    #raise NotImplementedError
+    for i in test_set._hmm_data.keys():
+        X, lengths = test_set._hmm_data[i]
+        dict_p = {}
+        #print("Predicting the %s word" % i)
+        for word in models.keys():
+            model = models[word]
+            #print("Predicting prob of word %s" % word)
+            try:
+                logL = model.score(X, lengths)
+            except:
+                #print("failed to score, mark as -inf")
+                logL = float('-inf')
+            dict_p[word] = logL
+        probabilities.append(dict_p)
+    #print(probabilities)
+    for prob in probabilities:
+        ordered =  sorted(prob.items(), key =  lambda x:x[1], reverse=True)
+        #print(ordered)
+        guess = ordered[0][0]
+        guesses.append(guess)
+
+    return probabilities, guesses
+

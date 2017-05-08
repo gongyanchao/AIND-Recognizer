@@ -33,7 +33,7 @@ class ModelSelector(object):
 
     def base_model(self, num_states):
         # with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
         # warnings.filterwarnings("ignore", category=RuntimeWarning)
         try:
             hmm_model = GaussianHMM(n_components=num_states, covariance_type="diag", n_iter=1000,
@@ -74,27 +74,64 @@ class SelectorBIC(ModelSelector):
 
         :return: GaussianHMM object
         """
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
+        best_model = None
+        best_score = float('inf')
+        logN = np.log(len(self.X))
+        for n in range(self.min_n_components, self.max_n_components+1):
+            try:
+                model = self.base_model(n)
+                logL = model.score(self.X, self.lengths)
+                p = n**2 + 2*n*model.n_features
+                score = p*logN -2*logL
 
-        # TODO implement model selection based on BIC scores
-        raise NotImplementedError
-
-
+                if score < best_score:
+                    if(self.verbose):
+                        print("In %d component,the score is %f, smaller than %f" % (n, score, best_score))
+                    best_score = score
+                    best_model = model
+                    
+            except Exception as e:
+                if(self.verbose):
+                    print("Exception:"+str(e))
+                
+        return best_model
+            
 class SelectorDIC(ModelSelector):
-    ''' select best model based on Discriminative Information Criterion
-
+    ''' 
+    select best model based on Discriminative Information Criterion
     Biem, Alain. "A model selection criterion for classification: Application to hmm topology optimization."
     Document Analysis and Recognition, 2003. Proceedings. Seventh International Conference on. IEEE, 2003.
     http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.58.6208&rep=rep1&type=pdf
     DIC = log(P(X(i)) - 1/(M-1)SUM(log(P(X(all but i))
     '''
-
     def select(self):
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
+        best_model = None
+        best_score = float('-inf')
+        #logN = np.log(len(self.X))
+        words_count = len(self.hwords.keys())
+        for n in range(self.min_n_components, self.max_n_components + 1):
+            try:
+                model = self.base_model(n)
+                logL = model.score(self.X, self.lengths)
+                n_logL = 0
+                for w in self.hwords:
+                    if w != self.this_word:
+                        X, lengths = self.hwords[w]
+                        n_logL += model.score(X, lengths)
 
-        # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+                score = logL - 1./(words_count-1)*(n_logL-logL)
+                if score > best_score:
+                    if(self.verbose):
+                        print("In %d component,the score is %f, larger than %f" % (n, score, best_score))
+                    best_model = model
+                    best_score = score
+            except Exception as e:
+                if(self.verbose):
+                    print(e)
 
+        return best_model
 
 class SelectorCV(ModelSelector):
     ''' select best model based on average log Likelihood of cross-validation folds
@@ -102,7 +139,44 @@ class SelectorCV(ModelSelector):
     '''
 
     def select(self):
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
-
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
         # TODO implement model selection using CV
-        raise NotImplementedError
+        best_score = float('-inf')
+        best_model = None
+        for n in range(self.min_n_components, self.max_n_components+1 ):
+            try:
+                score_list = []
+                if len(self.lengths) > 2:
+                    split_method = KFold(n_splits=2)#(n_splits=len(self.lengths)-5 if len(self.lengths)-5>2 else 2)
+                    try:
+                        for train_idx,test_idx in split_method.split(self.sequences):
+                            temp_X, temp_lengths = self.X, self.lengths
+                            self.X, self.lengths= combine_sequences(train_idx, self.sequences)
+                            model = self.base_model(n)
+                            X_test, lengths_test = combine_sequences(test_idx, self.sequences)
+                            logL = model.score(X_test, lengths_test)
+                            score_list.append(logL)
+                            self.X, self.lengths = temp_X, temp_lengths
+                    except Exception as spl_error:
+                        if (self.verbose):
+                            print(spl_error)
+
+                else:
+                    model = self.base_model(n)
+                    logL = model.score(self.X, self.lengths)
+                    score_list.append(logL)
+
+                score = np.mean(score_list)
+
+                if score > best_score:
+                    if (self.verbose):
+                        print("In %d component,the score is %f, larger than %f" %(n, score, best_score))
+                    best_score = score
+                    best_model = model
+
+            except Exception as e:
+                if (self.verbose):
+                    print("Exception:"+str(e))
+                continue
+        return best_model
+                
